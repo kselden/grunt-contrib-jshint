@@ -9,8 +9,55 @@
 'use strict';
 
 var path = require('path');
+var shjs = require("shelljs");
 var jshint = require('jshint').JSHINT;
 var jshintcli = require('jshint/src/cli/cli');
+
+var findFileResults = {};
+function findFile(name, dir) {
+  dir = dir || process.cwd();
+
+  var filename = path.normalize(path.join(dir, name));
+  if (findFileResults[filename] !== undefined) {
+    return findFileResults[filename];
+  }
+
+  var parent = path.resolve(dir, "../");
+
+  if (shjs.test("-e", filename)) {
+    findFileResults[filename] = filename;
+    return filename;
+  }
+
+  if (dir === parent) {
+    findFileResults[filename] = null;
+    return null;
+  }
+
+  return findFile(name, parent);
+}
+
+function loadIgnores(exclude) {
+  var file = findFile(".jshintignore");
+
+  if (!file && !exclude) {
+    return [];
+  }
+
+  var lines = (file ? shjs.cat(file) : "").split("\n");
+  lines.unshift(exclude || "");
+
+  return lines
+    .filter(function (line) {
+      return !!line.trim();
+    })
+    .map(function (line) {
+      if (line[0] === "!") {
+        return "!" + path.resolve(path.dirname(file), line.substr(1).trim());
+      }
+      return path.resolve(path.dirname(file), line.trim());
+    });
+}
 
 exports.init = function(grunt) {
   var exports = {
@@ -156,7 +203,7 @@ exports.init = function(grunt) {
   exports.lint = function(files, options, done) {
     var cliOptions = {
       verbose: grunt.option('verbose'),
-      extensions: '',
+      extensions: ''
     };
 
     // A list of non-dot-js extensions to check
@@ -211,6 +258,9 @@ exports.init = function(grunt) {
       allResults = allResults.concat(results);
       allData = allData.concat(data);
     };
+    if (!cliopts.ignores) {
+      cliopts.ignores = loadIgnores();
+    }
     jshintcli.run(cliopts);
     done(allResults, allData);
   };
